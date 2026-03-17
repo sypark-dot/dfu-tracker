@@ -149,11 +149,13 @@ function showToast(msg,type='ok'){
 }
 function setLoading(v){document.getElementById('loading').style.display=v?'flex':'none';}
 
-async function loadFromSheet(){
+function loadFromSheet(){
   setLoading(true);
-  try{
-    const res = await fetch(SCRIPT_URL+'?action=read');
-    const json = await res.json();
+  const cbName = 'jsonpCb_'+Date.now();
+  window[cbName] = function(json){
+    setLoading(false);
+    delete window[cbName];
+    document.getElementById('jsonp-script')&&document.getElementById('jsonp-script').remove();
     if(json.status==='ok'){
       json.data.forEach(row=>{
         const idx=H.findIndex(h=>h.code===row.hospital);
@@ -163,41 +165,47 @@ async function loadFromSheet(){
         H[idx].target       = row.target        ||100;
         H[idx].clinicPerWeek= row.clinicPerWeek ||1;
         H[idx].perVisit     = row.perVisit      ||1;
-        if(row.monthlyActual){
-          Object.assign(actual[H[idx].code], row.monthlyActual);
-        }
+        if(row.monthlyActual){Object.assign(actual[H[idx].code], row.monthlyActual);}
       });
       renderPlan();renderTrack();renderSummary();
       document.getElementById('sync-status').textContent='마지막 동기화: '+nowStr();
       showToast('시트에서 불러왔어요 ✓');
-    } else { showToast('불러오기 실패: '+json.error,'err'); }
-  } catch(e){ showToast('연결 오류: '+e.message,'err'); }
-  setLoading(false);
+    } else { showToast('불러오기 실패: '+(json.error||'unknown'),'err'); }
+  };
+  const s = document.createElement('script');
+  s.id = 'jsonp-script';
+  s.src = SCRIPT_URL+'?action=read&callback='+cbName;
+  s.onerror = ()=>{ setLoading(false); showToast('연결 오류','err'); };
+  document.body.appendChild(s);
 }
 
-async function saveToSheet(){
+function saveToSheet(){
   setLoading(true);
-  try{
-    const data = H.map(h=>({
-      hospital:     h.code,
-      approvedDate: h.approved,
-      firstEnroll:  h.firstEnroll,
-      target:       h.target,
-      clinicPerWeek:h.clinicPerWeek,
-      perVisit:     h.perVisit,
-      monthlyActual:actual[h.code],
-    }));
-    const res = await fetch(SCRIPT_URL, {
-      method:'POST',
-      body: JSON.stringify({action:'write', data}),
-    });
-    const json = await res.json();
+  const data = H.map(h=>({
+    hospital:     h.code,
+    approvedDate: h.approved,
+    firstEnroll:  h.firstEnroll,
+    target:       h.target,
+    clinicPerWeek:h.clinicPerWeek,
+    perVisit:     h.perVisit,
+    monthlyActual:actual[h.code],
+  }));
+  const cbName = 'jsonpSaveCb_'+Date.now();
+  window[cbName] = function(json){
+    setLoading(false);
+    delete window[cbName];
+    document.getElementById('jsonp-save-script')&&document.getElementById('jsonp-save-script').remove();
     if(json.status==='ok'){
       document.getElementById('sync-status').textContent='마지막 저장: '+nowStr();
       showToast('구글시트에 저장했어요 ✓');
-    } else { showToast('저장 실패: '+json.error,'err'); }
-  } catch(e){ showToast('연결 오류: '+e.message,'err'); }
-  setLoading(false);
+    } else { showToast('저장 실패: '+(json.error||'unknown'),'err'); }
+  };
+  const payload = encodeURIComponent(JSON.stringify({action:'write',data,callback:cbName}));
+  const s = document.createElement('script');
+  s.id = 'jsonp-save-script';
+  s.src = SCRIPT_URL+'?payload='+payload+'&callback='+cbName;
+  s.onerror = ()=>{ setLoading(false); showToast('연결 오류','err'); };
+  document.body.appendChild(s);
 }
 
 function calc(h){
