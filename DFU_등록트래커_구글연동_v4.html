@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DFU-DC 병원별 등록 트래커</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1a1a1a;background:#f5f5f3;min-height:100vh}
+.header{background:#1F4E79;color:#fff;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.header h1{font-size:17px;font-weight:500}
+.header-right{display:flex;align-items:center;gap:10px}
+.sync-btn{padding:6px 14px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit}
+.sync-btn:hover{background:rgba(255,255,255,0.25)}
+.sync-status{font-size:11px;opacity:.75}
+.container{max-width:1200px;margin:0 auto;padding:20px 16px}
+.tabs{display:flex;gap:4px;background:#fff;border-radius:10px 10px 0 0;border:1px solid #e0e0dc;border-bottom:none;padding:10px 10px 0}
+.tab{padding:7px 18px;border-radius:7px 7px 0 0;cursor:pointer;font-size:13px;color:#666;border:1px solid transparent;border-bottom:none;margin-bottom:-1px;transition:all .15s}
+.tab.active{color:#1F4E79;font-weight:500;border-color:#e0e0dc;background:#fff}
+.tab:hover:not(.active){background:#f5f5f3}
+.panel{display:none;background:#fff;border:1px solid #e0e0dc;border-radius:0 0 10px 10px;padding:20px}
+.panel.active{display:block}
+table{width:100%;border-collapse:collapse}
+th{background:#f5f5f3;color:#666;font-weight:500;padding:8px 10px;border-bottom:1px solid #e0e0dc;text-align:left;font-size:11px;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #e0e0dc;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.total-row td{font-weight:500;background:#f5f5f3}
+input[type=number],input[type=date]{border:1px solid #d0d0cc;border-radius:6px;padding:5px 8px;font-size:12px;background:#fff;color:#1a1a1a;width:100%;font-family:inherit}
+input:focus{outline:none;border-color:#1F4E79;box-shadow:0 0 0 2px rgba(31,78,121,.12)}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:500}
+.b-green{background:#EAF3DE;color:#3B6D11}
+.b-amber{background:#FAEEDA;color:#854F0B}
+.b-gray{background:#f0f0ee;color:#666}
+.b-blue{background:#E6F1FB;color:#185FA5}
+.b-red{background:#FCEBEB;color:#A32D2D}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:1rem 0}
+.metric{background:#f5f5f3;border-radius:8px;padding:12px 14px;border:1px solid #e8e8e4}
+.ml{font-size:11px;color:#888;margin-bottom:4px}
+.mv{font-size:22px;font-weight:500;color:#1a1a1a}
+.ms{font-size:11px;color:#888;margin-top:3px}
+hr{border:none;border-top:1px solid #e8e8e4;margin:1.25rem 0}
+.sec{font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin:1.25rem 0 .6rem}
+.progress-wrap{background:#e8e8e4;border-radius:20px;height:9px;overflow:hidden;margin-top:5px}
+.progress-bar{height:9px;border-radius:20px;transition:width .4s}
+.hosp-name{font-weight:500}
+.hosp-code{font-size:11px;color:#999}
+.cumul-cell{color:#888;font-size:12px}
+.over{color:#3B6D11;font-weight:500}
+.hint{font-size:11px;color:#aaa;margin-top:8px}
+.toast{position:fixed;bottom:24px;right:24px;padding:10px 18px;border-radius:8px;font-size:13px;color:#fff;z-index:999;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+.toast.ok{background:#3B6D11}
+.toast.err{background:#A32D2D}
+.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,0.7);display:flex;align-items:center;justify-content:center;z-index:998;display:none}
+.spinner{width:32px;height:32px;border:3px solid #e0e0dc;border-top-color:#1F4E79;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}.container{padding:10px 8px}th,td{padding:6px 7px;font-size:11px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>DFU-DC 병원별 등록 트래커</h1>
+  <div class="header-right">
+    <span class="sync-status" id="sync-status">마지막 동기화: -</span>
+    <button class="sync-btn" onclick="loadFromSheet()">↻ 시트에서 불러오기</button>
+    <button class="sync-btn" onclick="saveToSheet()">↑ 시트에 저장</button>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loading"><div class="spinner"></div></div>
+<div class="toast" id="toast"></div>
+
+<div class="container">
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('plan')">계획 설정</div>
+  <div class="tab" onclick="switchTab('track')">월별 등록 추적</div>
+  <div class="tab" onclick="switchTab('summary')">전체 요약</div>
+</div>
+
+<div id="tab-plan" class="panel active">
+  <p class="sec">병원별 기본 정보 입력</p>
+  <table>
+  <thead><tr>
+    <th>병원</th><th>심의승인일</th><th>첫 등록일</th><th>목표 대상자</th>
+    <th>외래 횟수/주</th><th>회당 평균 등록 수</th>
+  </tr></thead>
+  <tbody id="plan-body"></tbody>
+  </table>
+  <hr>
+  <p class="sec">자동 계산 결과 (외래 진료일 기준)</p>
+  <table>
+  <thead><tr>
+    <th>병원</th><th>목표</th><th>주당 등록 수</th>
+    <th>소요 주수</th><th>소요 외래 진료일</th>
+    <th>완료 예상일</th><th>진료일당 필요 등록 수</th><th>상태</th>
+  </tr></thead>
+  <tbody id="calc-body"></tbody>
+  <tfoot><tr class="total-row" id="calc-total"></tr></tfoot>
+  </table>
+</div>
+
+<div id="tab-track" class="panel">
+  <p class="sec">월별 실제 등록 수 입력 → 누적 자동 계산</p>
+  <div style="overflow-x:auto">
+  <table>
+  <thead id="track-head"></thead>
+  <tbody id="track-body"></tbody>
+  <tfoot id="track-foot"></tfoot>
+  </table>
+  </div>
+  <p class="hint">* 초록색 숫자는 목표 달성한 경우입니다.</p>
+</div>
+
+<div id="tab-summary" class="panel">
+  <p class="sec">전체 요약</p>
+  <div class="metrics" id="metrics"></div>
+  <hr>
+  <p class="sec">병원별 진행 현황</p>
+  <div id="progress-section"></div>
+</div>
+</div>
+
+<script>
+const SCRIPT_URL = 'https://gentle-shape-4717.sypark.workers.dev';
+
+const H = [
+  {code:'IWH',name:'이대목동',  approved:'2026-03-17',firstEnroll:'',target:100,clinicPerWeek:1,perVisit:1},
+  {code:'SCH',name:'순천향서울',approved:'',           firstEnroll:'',target:100,clinicPerWeek:1,perVisit:1},
+  {code:'IJH',name:'인제일산',  approved:'2026-01-26',firstEnroll:'2026-01-30',target:100,clinicPerWeek:1,perVisit:1},
+];
+
+const MONTHS=['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06',
+              '2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
+const MLABELS=['26.01','26.02','26.03','26.04','26.05','26.06',
+               '26.07','26.08','26.09','26.10','26.11','26.12'];
+
+const actual={};
+H.forEach(h=>{actual[h.code]={};MONTHS.forEach(m=>actual[h.code][m]='');});
+
+function fmtDate(d){if(!d)return'-';return new Date(d).toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'});}
+function parseDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d;}
+function nowStr(){return new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});}
+
+function showToast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className=`toast ${type} show`;
+  setTimeout(()=>t.className='toast',2500);
+}
+function setLoading(v){document.getElementById('loading').style.display=v?'flex':'none';}
+
+async function loadFromSheet(){
+  setLoading(true);
+  try{
+    const res = await fetch(SCRIPT_URL+'?action=read');
+    const json = await res.json();
+    if(json.status==='ok'){
+      json.data.forEach(row=>{
+        const idx=H.findIndex(h=>h.code===row.hospital);
+        if(idx<0||idx>2)return;
+        H[idx].approved     = row.approvedDate  ||'';
+        H[idx].firstEnroll  = row.firstEnroll   ||'';
+        H[idx].target       = row.target        ||100;
+        H[idx].clinicPerWeek= row.clinicPerWeek ||1;
+        H[idx].perVisit     = row.perVisit      ||1;
+        if(row.monthlyActual){
+          Object.assign(actual[H[idx].code], row.monthlyActual);
+        }
+      });
+      renderPlan();renderTrack();renderSummary();
+      document.getElementById('sync-status').textContent='마지막 동기화: '+nowStr();
+      showToast('시트에서 불러왔어요 ✓');
+    } else { showToast('불러오기 실패: '+json.error,'err'); }
+  } catch(e){ showToast('연결 오류: '+e.message,'err'); }
+  setLoading(false);
+}
+
+async function saveToSheet(){
+  setLoading(true);
+  try{
+    const data = H.map(h=>({
+      hospital:     h.code,
+      approvedDate: h.approved,
+      firstEnroll:  h.firstEnroll,
+      target:       h.target,
+      clinicPerWeek:h.clinicPerWeek,
+      perVisit:     h.perVisit,
+      monthlyActual:actual[h.code],
+    }));
+    const res = await fetch(SCRIPT_URL, {
+      method:'POST',
+      body: JSON.stringify({action:'write', data}),
+    });
+    const json = await res.json();
+    if(json.status==='ok'){
+      document.getElementById('sync-status').textContent='마지막 저장: '+nowStr();
+      showToast('구글시트에 저장했어요 ✓');
+    } else { showToast('저장 실패: '+json.error,'err'); }
+  } catch(e){ showToast('연결 오류: '+e.message,'err'); }
+  setLoading(false);
+}
+
+function calc(h){
+  const perWeek=h.clinicPerWeek*h.perVisit;
+  const weeksNeeded=perWeek>0?Math.ceil(h.target/perWeek):null;
+  const clinicDays=weeksNeeded?weeksNeeded*h.clinicPerWeek:null;
+  const base=parseDate(h.firstEnroll)||parseDate(h.approved);
+  let completionDate=null;
+  if(base&&weeksNeeded){const d=new Date(base);d.setDate(d.getDate()+weeksNeeded*7);completionDate=d;}
+  const perClinicDay=clinicDays?(h.target/clinicDays).toFixed(1):null;
+  return{perWeek,weeksNeeded,clinicDays,completionDate,perClinicDay};
+}
+
+function getActualTotal(code){return MONTHS.reduce((s,m)=>s+(parseInt(actual[code][m])||0),0);}
+
+function switchTab(t){
+  ['plan','track','summary'].forEach((n,i)=>{
+    document.querySelectorAll('.tab')[i].classList.toggle('active',n===t);
+    document.getElementById('tab-'+n).classList.toggle('active',n===t);
+  });
+  if(t==='track')renderTrack();
+  if(t==='summary')renderSummary();
+}
+
+function renderPlan(){
+  document.getElementById('plan-body').innerHTML=H.map((h,i)=>`
+    <tr>
+      <td><div class="hosp-name">${h.name}</div><div class="hosp-code">${h.code}</div></td>
+      <td><input type="date" value="${h.approved}" onchange="H[${i}].approved=this.value;renderPlan()"></td>
+      <td><input type="date" value="${h.firstEnroll}" onchange="H[${i}].firstEnroll=this.value;renderPlan()"></td>
+      <td><input type="number" min="1" max="300" value="${h.target}" onchange="H[${i}].target=+this.value;renderPlan()"></td>
+      <td><input type="number" min="1" max="7" value="${h.clinicPerWeek}" onchange="H[${i}].clinicPerWeek=+this.value;renderPlan()"></td>
+      <td><input type="number" min="0.5" max="20" step="0.5" value="${h.perVisit}" onchange="H[${i}].perVisit=+this.value;renderPlan()"></td>
+    </tr>`).join('');
+
+  const results=H.map(h=>({h,...calc(h)}));
+  document.getElementById('calc-body').innerHTML=results.map(r=>{
+    const pct=r.h.approved?Math.round(getActualTotal(r.h.code)/r.h.target*100):null;
+    const badge=!r.h.approved
+      ?`<span class="badge b-gray">승인일 미입력</span>`
+      :pct>=100?`<span class="badge b-green">완료</span>`
+      :pct>=50?`<span class="badge b-amber">진행중</span>`
+      :`<span class="badge b-blue">등록중</span>`;
+    return`<tr>
+      <td><strong>${r.h.name}</strong></td>
+      <td>${r.h.target}명</td>
+      <td>${r.perWeek}명/주</td>
+      <td>${r.weeksNeeded?r.weeksNeeded+'주':'-'}</td>
+      <td>${r.clinicDays?r.clinicDays+'일':'-'}</td>
+      <td>${fmtDate(r.completionDate)}</td>
+      <td style="color:#888">${r.perClinicDay?r.perClinicDay+'명':'-'}</td>
+      <td>${badge}</td>
+    </tr>`;
+  }).join('');
+
+  const tot=H.reduce((s,h)=>s+h.target,0);
+  const totPW=results.reduce((s,r)=>s+r.perWeek,0);
+  const maxW=results.reduce((s,r)=>r.weeksNeeded?Math.max(s,r.weeksNeeded):s,0);
+  const latestDate=results.reduce((l,r)=>(!r.completionDate?l:(!l||r.completionDate>l)?r.completionDate:l),null);
+  document.getElementById('calc-total').innerHTML=`
+    <td><strong>전체</strong></td><td><strong>${tot}명</strong></td>
+    <td><strong>${totPW}명/주</strong></td>
+    <td><strong>${maxW?maxW+'주':'-'}</strong></td>
+    <td>-</td><td><strong>${fmtDate(latestDate)}</strong></td><td>-</td><td></td>`;
+}
+
+function renderTrack(){
+  document.getElementById('track-head').innerHTML=`<tr>
+    <th>병원</th>
+    ${MLABELS.map(m=>`<th style="text-align:center">${m}<br><span style="font-weight:400;opacity:.7">실제&nbsp;/&nbsp;누적</span></th>`).join('')}
+    <th>합계</th><th>목표</th><th>달성률</th>
+  </tr>`;
+
+  document.getElementById('track-body').innerHTML=H.map((h,hi)=>{
+    let cumul=0;
+    const cells=MONTHS.map((m)=>{
+      const v=actual[h.code][m]===''?'':parseInt(actual[h.code][m])||0;
+      cumul+=(parseInt(v)||0);
+      const cc=cumul>=h.target?'over cumul-cell':'cumul-cell';
+      return`<td style="text-align:center;white-space:nowrap">
+        <input type="number" min="0" max="99" value="${v}" style="width:40px;text-align:center;display:inline-block" onchange="actual['${h.code}']['${m}']=this.value;renderTrack();">
+        &nbsp;<span class="${cc}">${cumul}</span>
+      </td>`;
+    }).join('');
+    const tot=getActualTotal(h.code);
+    const pct=Math.round(tot/h.target*100);
+    const pb=pct>=100?'b-green':pct>=50?'b-amber':'b-gray';
+    return`<tr>
+      <td><div class="hosp-name">${h.name}</div></td>
+      ${cells}
+      <td><strong>${tot}</strong></td>
+      <td>${h.target}</td>
+      <td><span class="badge ${pb}">${pct}%</span></td>
+    </tr>`;
+  }).join('');
+
+  let grandCumul=0;
+  const footCells=MONTHS.map((m)=>{
+    const mt=H.reduce((s,h)=>s+(parseInt(actual[h.code][m])||0),0);
+    grandCumul+=mt;
+    return`<td style="text-align:center;white-space:nowrap"><strong>${mt||'-'}</strong> <span style="color:#888;font-size:11px">${grandCumul}</span></td>`;
+  }).join('');
+  const gTot=H.reduce((s,h)=>s+getActualTotal(h.code),0);
+  const gTarget=H.reduce((s,h)=>s+h.target,0);
+  document.getElementById('track-foot').innerHTML=`<tr class="total-row">
+    <td><strong>합계</strong></td>${footCells}
+    <td><strong>${gTot}</strong></td><td><strong>${gTarget}</strong></td>
+    <td><span class="badge ${gTot/gTarget>=1?'b-green':gTot/gTarget>=.5?'b-amber':'b-gray'}">${Math.round(gTot/gTarget*100)}%</span></td>
+  </tr>`;
+}
+
+function renderSummary(){
+  const gTarget=H.reduce((s,h)=>s+h.target,0);
+  const gActual=H.reduce((s,h)=>s+getActualTotal(h.code),0);
+  const pct=Math.round(gActual/gTarget*100);
+  const results=H.map(h=>({h,...calc(h)}));
+  const latestDate=results.reduce((l,r)=>(!r.completionDate?l:(!l||r.completionDate>l)?r.completionDate:l),null);
+
+  document.getElementById('metrics').innerHTML=`
+    <div class="metric"><div class="ml">전체 목표</div><div class="mv">${gTarget}명</div></div>
+    <div class="metric"><div class="ml">현재 등록</div><div class="mv">${gActual}명</div><div class="ms">${pct}% 달성</div></div>
+    <div class="metric"><div class="ml">잔여 등록 필요</div><div class="mv">${gTarget-gActual}명</div></div>
+    <div class="metric"><div class="ml">전체 완료 예상</div><div class="mv" style="font-size:15px">${fmtDate(latestDate)}</div></div>`;
+
+  document.getElementById('progress-section').innerHTML=H.map(h=>{
+    const tot=getActualTotal(h.code);
+    const pct=Math.min(100,Math.round(tot/h.target*100));
+    const r=calc(h);
+    const color=pct>=100?'#639922':pct>=50?'#BA7517':'#1F4E79';
+    return`<div style="margin-bottom:12px;padding:14px;background:#f5f5f3;border-radius:8px;border:1px solid #e8e8e4">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+        <span style="font-weight:500">${h.name}</span>
+        <span style="font-size:12px;color:#888">${tot} / ${h.target}명 (${pct}%)</span>
+      </div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:${pct}%;background:${color}"></div></div>
+      <div style="margin-top:7px;font-size:11px;color:#999;display:flex;gap:16px;flex-wrap:wrap">
+        <span>완료 예상: ${fmtDate(r.completionDate)}</span>
+        <span>주당 목표: ${r.perWeek}명/주</span>
+        <span>승인일: ${h.approved||'미입력'}</span>
+        <span>첫 등록일: ${h.firstEnroll||'미입력'}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+renderPlan();
+loadFromSheet();
+</script>
+</body>
+</html>
